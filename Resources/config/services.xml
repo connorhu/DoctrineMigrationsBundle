@@ -47,7 +47,7 @@
                  decorates="doctrine.migrations.migrations_factory"
         >
             <argument id="doctrine.migrations.container_aware_migrations_factory.inner" type="service"/>
-            <argument id="service_container" type="service"/>
+            <argument id="service_container" type="tagged_locator" tag="doctrine.migration.service_subscribers"/>
         </service>
 
         <service id="doctrine_migrations.diff_command" class="Doctrine\Migrations\Tools\Console\Command\DiffCommand">

@@ -6,25 +6,28 @@ namespace Doctrine\Bundle\MigrationsBundle\DependencyInjection;
 
 use Doctrine\Bundle\MigrationsBundle\Collector\MigrationsCollector;
 use Doctrine\Bundle\MigrationsBundle\Collector\MigrationsFlattener;
+use Doctrine\Migrations\Finder\GlobFinder;
 use Doctrine\Migrations\Metadata\Storage\MetadataStorage;
 use Doctrine\Migrations\Metadata\Storage\TableMetadataStorageConfiguration;
 use Doctrine\Migrations\Version\MigrationFactory;
 use InvalidArgumentException;
+use ReflectionClass;
+use ReflectionException;
 use RuntimeException;
 use Symfony\Component\Config\FileLocator;
+use Symfony\Component\Config\Resource\GlobResource;
 use Symfony\Component\DependencyInjection\Argument\ServiceClosureArgument;
-use Symfony\Component\DependencyInjection\ContainerAwareInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Loader\XmlFileLoader;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\DependencyInjection\Extension;
+use Symfony\Contracts\Service\ServiceSubscriberInterface;
 
 use function array_keys;
 use function assert;
 use function explode;
 use function implode;
-use function interface_exists;
 use function is_array;
 use function sprintf;
 use function strlen;
@@ -53,6 +56,8 @@ class DoctrineMigrationsExtension extends Extension
         $loader->load('services.xml');
 
         $configurationDefinition = $container->getDefinition('doctrine.migrations.configuration');
+
+        $this->registerServiceSubscribers($container, $config['migrations_paths']);
 
         foreach ($config['migrations_paths'] as $ns => $path) {
             $path = $this->checkIfBundleRelativePath($path, $container);
@@ -132,12 +137,6 @@ class DoctrineMigrationsExtension extends Extension
 
         $container->setParameter('doctrine.migrations.preferred_em', $config['em']);
         $container->setParameter('doctrine.migrations.preferred_connection', $config['connection']);
-
-        if (interface_exists(ContainerAwareInterface::class)) {
-            return;
-        }
-
-        $container->removeDefinition('doctrine.migrations.container_aware_migrations_factory');
     }
 
     private function checkIfBundleRelativePath(string $path, ContainerBuilder $container): string
@@ -186,6 +185,35 @@ class DoctrineMigrationsExtension extends Extension
                 'priority' => '249',
             ]);
         $container->setDefinition('doctrine_migrations.migrations_collector', $collectorDefinition);
+    }
+
+    /**
+     * @param array<string> $migrationPaths
+     *
+     * @throws ReflectionException
+     */
+    private function registerServiceSubscribers(ContainerBuilder $container, array $migrationPaths): void
+    {
+        $finder = new GlobFinder();
+
+        foreach ($migrationPaths as $namespace => $path) {
+            $migrations = $finder->findMigrations($path, $namespace);
+            foreach ($migrations as $migrationClass) {
+                $ref = new ReflectionClass($migrationClass);
+                if (! $ref->implementsInterface(ServiceSubscriberInterface::class)) {
+                    continue;
+                }
+
+                $definition = new Definition($migrationClass);
+                $definition->setAutowired(true);
+                $definition->setAutoconfigured(true);
+                $definition->addTag('doctrine.migration.service_subscribers');
+
+                $container->setDefinition($migrationClass, $definition);
+            }
+
+            $container->addResource(new GlobResource($path, '*.php', false));
+        }
     }
 
     /**

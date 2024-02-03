@@ -6,8 +6,8 @@ namespace Doctrine\Bundle\MigrationsBundle\MigrationsFactory;
 
 use Doctrine\Migrations\AbstractMigration;
 use Doctrine\Migrations\Version\MigrationFactory;
+use Psr\Container\ContainerInterface;
 use Symfony\Component\DependencyInjection\ContainerAwareInterface;
-use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * @deprecated This class is not compatible with Symfony >= 7
@@ -32,6 +32,10 @@ class ContainerAwareMigrationFactory implements MigrationFactory
 
     public function createVersion(string $migrationClassName): AbstractMigration
     {
+        if ($this->container->has($migrationClassName)) {
+            return $this->container->get($migrationClassName);
+        }
+
         $migration = $this->migrationFactory->createVersion($migrationClassName);
 
         if ($migration instanceof ContainerAwareInterface) {
